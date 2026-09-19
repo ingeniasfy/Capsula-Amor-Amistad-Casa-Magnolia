@@ -546,6 +546,10 @@
     appId: "1:22963180418:web:564e4c736e22100a8ff59b"
   };
   const FIREBASE_CONFIGURADO = firebaseConfig.apiKey !== "TU_API_KEY";
+  // Cambia esto a "true" solo después de activar Firebase Storage (requiere plan Blaze).
+  // Mientras esté en "false", el botón "Subir foto" no intenta ninguna subida,
+  // así se evita que el formulario se quede colgado esperando una respuesta que nunca llega.
+  const STORAGE_HABILITADO = false;
 
   // Catálogo inicial (se carga automáticamente la primera vez que la base de datos está vacía)
   const SEED_PRODUCTS = [
@@ -900,7 +904,10 @@
   }
 
   document.getElementById('productoImagenBtn').addEventListener('click', function(){
-    if(!state.storage){ toast('La subida de fotos no está disponible todavía.'); return; }
+    if(!STORAGE_HABILITADO){
+      toast('Subir fotos nuevas requiere activar Firebase Storage (plan Blaze). Puedes guardar el producto sin foto.');
+      return;
+    }
     productoImagenInput.click();
   });
   productoImagenInput.addEventListener('change', function(){
@@ -943,18 +950,22 @@
       var imagenUrl = document.getElementById('productoImagenUrl').value || null;
       var fotoFallo = false;
 
-      if(state.pendingImageFile && state.storage){
+      if(state.pendingImageFile && STORAGE_HABILITADO && state.storage){
         try{
           var path = 'product-images/' + crypto.randomUUID() + '-' + state.pendingImageFile.name;
           var fileRef = ref(state.storage, path);
-          await uploadBytes(fileRef, state.pendingImageFile);
+          var subida = uploadBytes(fileRef, state.pendingImageFile);
+          var tiempoAgotado = new Promise(function(_, reject){ setTimeout(function(){ reject(new Error('timeout')); }, 6000); });
+          await Promise.race([subida, tiempoAgotado]);
           imagenUrl = await getDownloadURL(fileRef);
           imagenPath = path;
         } catch(imgErr){
-          // Storage no está disponible (requiere plan Blaze). No dejamos que esto
-          // bloquee el guardado del producto: seguimos sin la foto nueva.
+          // Storage no está disponible (requiere plan Blaze), o tardó demasiado.
+          // No dejamos que esto bloquee el guardado del producto: seguimos sin la foto nueva.
           fotoFallo = true;
         }
+      } else if(state.pendingImageFile && !STORAGE_HABILITADO){
+        fotoFallo = true;
       }
 
       var data = {
